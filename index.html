@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> Billions Birds Game</title>
+    <style>
+        body {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            background-image: url('fire.png');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            font-family: 'Arial', sans-serif;
+            
+            overflow: hidden;
+            height: 100%;
+        }
+
+        html {
+            height: 100%;
+        }
+
+        #gameContainer {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            cursor: crosshair;
+        }
+
+        #gameCanvas {
+            display: block;
+            background: transparent;
+        }
+
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: rgb(17, 0, 0);
+            font-size: 24px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            z-index: 10;
+        }
+
+        #levelInfo {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgb(21, 2, 2);
+            font-size: 28px;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            z-index: 10;
+        }
+
+        #instructions {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: rgb(18, 1, 1);
+            font-size: 16px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            text-align: right;
+            z-index: 10;
+        }
+
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            font-size: 24px;
+            display: none;
+            z-index: 20;
+        }
+
+        #restartBtn {
+            background: #ff6b35;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 18px;
+            border-radius: 10px;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: background 0.3s;
+        }
+
+        #restartBtn:hover {
+            background: #e55a2b;
+        }
+
+        .trajectory {
+            stroke: rgba(255,255,255,0.5);
+            stroke-width: 2;
+            stroke-dasharray: 5,5;
+            fill: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="ui">
+            <div>Score: <span id="score">0</span></div>
+            <div>Birds: <span id="birdsLeft">3</span></div>
+        </div>
+        
+        <div id="levelInfo">
+            Level <span id="currentLevel">1</span>
+        </div>
+        
+        <div id="instructions">
+            Click and drag to aim<br>
+            Release to launch bird<br>
+            Destroy all pigs to win!
+        </div>
+
+        <canvas id="gameCanvas"></canvas>
+
+        <div id="gameOver">
+            <div id="gameOverText">Game Over!</div>
+            <button id="restartBtn">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        class AngryBirdsGame {
+            constructor() {
+                this.canvas = document.getElementById('gameCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.canvas.width = window.innerWidth;
+                this.canvas.height = window.innerHeight;
+                
+                this.score = 0;
+                this.birdsLeft = 3;
+                this.currentLevel = 1;
+                this.gameState = 'aiming'; 
+                
+                this.slingshot = {
+                    x: 150,
+                    y: this.canvas.height - 150,
+                    baseWidth: 20,
+                    baseHeight: 100
+                };
+
+                this.birdImage = new Image();
+                this.birdImage.src = 'bird2.png'; 
+                
+                this.bird = null;
+                this.blocks = [];
+                this.pigs = [];
+                this.particles = [];
+                
+                this.mouse = { x: 0, y: 0, down: false };
+                this.trajectory = [];
+                
+                this.setupGame();
+                this.setupEventListeners();
+                this.gameLoop();
+            }
+            
+            setupGame() {
+                this.resetBird();
+                this.createLevel();
+            }
+            
+            resetBird() {
+                this.bird = {
+                    x: this.slingshot.x,
+                    y: this.slingshot.y - 30,
+                    radius: 40, 
+                    vx: 0,
+                    vy: 0,
+                    launched: false,
+                    width: 80, 
+                    height: 80 
+                };
+            }
+            
+            createLevel() {
+                this.blocks = [];
+                this.pigs = [];
+                
+                const startX = this.canvas.width - 350;
+                const groundY = this.canvas.height - 50;
+                
+                switch(this.currentLevel) {
+                    case 1:
+                        this.birdsLeft = 3;
+                        this.createLevel1(startX, groundY);
+                        break;
+                    case 2:
+                        this.birdsLeft = 3;
+                        this.createLevel2(startX, groundY);
+                        break;
+                    case 3:
+                        this.birdsLeft = 4;
+                        this.createLevel3(startX, groundY);
+                        break;
+                    case 4:
+                        this.birdsLeft = 6;
+                        this.createLevel4(startX, groundY);
+                        break;
+                    case 5:
+                        this.birdsLeft = 7;
+                        this.createLevel5(startX, groundY);
+                        break;
+                }
+                
+                document.getElementById('currentLevel').textContent = this.currentLevel;
+                document.getElementById('birdsLeft').textContent = this.birdsLeft;
+            }
+            
+            createLevel1(startX, groundY) {
+                // Simple pyramid structure
+                for (let i = 0; i < 4; i++) {
+                    this.blocks.push({
+                        x: startX + i * 60,
+                        y: groundY - 30,
+                        width: 50,
+                        height: 30,
+                        color: '#8B4513',
+                        destroyed: false
+                    });
+                }
+                
+                for (let i = 0; i < 3; i++) {
+                    this.blocks.push({
+                        x: startX + 30 + i * 60,
+                        y: groundY - 70,
+                        width: 50,
+                        height: 30,
+                        color: '#8B4513',
+                        destroyed: false
+                    });
+                }
+                
+                this.blocks.push({
+                    x: startX + 90,
+                    y: groundY - 110,
+                    width: 50,
+                    height: 30,
+                    color: '#8B4513',
+                    destroyed: false
+                });
+                
+                this.pigs.push({
+                    x: startX + 75,
+                    y: groundY - 50,
+                    radius: 20,
+                    color: '#90EE90',
+                    destroyed: false
+                });
+                
+                this.pigs.push({
+                    x: startX + 135,
+                    y: groundY - 90,
+                    radius: 20,
+                    color: '#90EE90',
+                    destroyed: false
+                });
+            }
+            
+            createLevel2(startX, groundY) {
+                // Tower structure
+                for (let i = 0; i < 6; i++) {
+                    this.blocks.push({
+                        x: startX + 100,
+                        y: groundY - 30 - (i * 35),
+                        width: 50,
+                        height: 30,
+                        color: i % 2 === 0 ? '#8B4513' : '#CD853F',
+                        destroyed: false
+                    });
+                }
+                
+                // Side supports
+                for (let i = 0; i < 3; i++) {
+                    this.blocks.push({
+                        x: startX + 50,
+                        y: groundY - 30 - (i * 35),
+                        width: 40,
+                        height: 25,
+                        color: '#A0522D',
+                        destroyed: false
+                    });
+                    
+                    this.blocks.push({
+                        x: startX + 160,
+                        y: groundY - 30 - (i * 35),
+                        width: 40,
+                        height: 25,
+                        color: '#A0522D',
+                        destroyed: false
+                    });
+                }
+                
+                this.pigs.push({
+                    x: startX + 125,
+                    y: groundY - 80,
+                    radius: 18,
+                    color: '#90EE90',
+                    destroyed: false
+                });
+                
+                this.pigs.push({
+                    x: startX + 125,
+                    y: groundY - 150,
+                    radius: 18,
+                    color: '#90EE90',
+                    destroyed: false
+                });
+                
+                this.pigs.push({
+                    x: startX + 75,
+                    y: groundY - 50,
+                    radius: 15,
+                    color: '#98FB98',
+                    destroyed: false
+                });
+            }
+            
+            createLevel3(startX, groundY) {
+                // Castle structure
+                // Base wall
+                for (let i = 0; i < 8; i++) {
+                    this.blocks.push({
+                        x: startX + i * 40,
+                        y: groundY - 30,
+                        width: 35,
+                        height: 30,
+                        color: '#696969',
+                        destroyed: false
+                    });
+                }
+                
+                // Second wall
+                for (let i = 1; i < 7; i++) {
+                    this.blocks.push({
+                        x: startX + i * 40,
+                        y: groundY - 65,
+                        width: 35,
+                        height: 30,
+                        color: '#696969',
+                        destroyed: false
+                    });
+                }
+                
+                // Towers
+                for (let i = 0; i < 4; i++) {
+                    this.blocks.push({
+                        x: startX,
+                        y: groundY - 65 - (i * 35),
+                        width: 35,
+                        height: 30,
+                        color: '#2F4F4F',
+                        destroyed: false
+                    });
+                    
+                    this.blocks.push({
+                        x: startX + 280,
+                        y: groundY - 65 - (i * 35),
+                        width: 35,
+                        height: 30,
+                        color: '#2F4F4F',
+                        destroyed: false
+                    });
+                }
+                
+                this.pigs.push({
+                    x: startX + 140,
+                    y: groundY - 50,
+                    radius: 22,
+                    color: '#FFD700',
+                    destroyed: false
+                });
+                
+                this.pigs.push({
+                    x: startX + 18,
+                    y: groundY - 180,
+                    radius: 16,
+                    color: '#90EE90',
+                    destroyed: false
+                });
+                
+                this.pigs.push({
+                    x: startX + 298,
+                    y: groundY - 180,
+                    radius: 16,
+                    color: '#90EE90',
+                    destroyed: false
+                });
+            }
+            
+            createLevel4(startX, groundY) {
+                // Bridge structure
+                // Left tower
+                for (let i = 0; i < 5; i++) {
+                    this.blocks.push({
+                        x: startX,
+                        y: groundY - 30 - (i * 35),
+                        width: 45,
+                        height: 30,
+                        color: '#8B4513',
+                        destroyed: false
+                    });
+                }
+                
+                // Right tower
+                for (let i = 0; i < 5; i++) {
+                    this.blocks.push({
+                        x: startX + 200,
+                        y: groundY - 30 - (i * 35),
+                        width: 45,
+                        height: 30,
+                        color: '#8B4513',
+                        destroyed: false
+                    });
+                }
+                
+                // Bridge blocks
+                for (let i = 0; i < 4; i++) {
+                    this.blocks.push({
+                        x: startX + 50 + (i * 40),
+                        y: groundY - 100,
+                        width: 35,
+                        height: 20,
+                        color: '#CD853F',
+                        destroyed: false
+                    });
+                }
+                
+                // Support pillars
+                for (let i = 0; i < 2; i++) {
+                    this.blocks.push({
+                        x: startX + 85,
+                        y: groundY - 30 - (i * 35),
+                        width: 25,
+                        height: 30,
+                        color: '#A0522D',
+                        destroyed: false
+                    });
+                    
+                    this.blocks.push({
+                        x: startX + 135,
+                        y: groundY - 30 - (i * 35),
+                        width: 25,
+                        height: 30,
+                        color: '#A0522D',
+                        destroyed: false
+                    });
+                }
+                
+                this.pigs.push({
+                    x: startX + 23,
+                    y: groundY - 200,
+                    radius: 18,
+                    color: '#90EE90',
+                    destroyed: false
+                });
+                
+                this.pigs.push({
+                    x: startX + 223,
+                    y: groundY - 200,
+                    radius: 18,
+                    color: '#90EE90',
+                    destroyed: false
+                });
+                
+                this.pigs.push({
+                    x: startX + 122,
+                    y: groundY - 125,
+                    radius: 20,
+                    color: '#FFD700',
+                    destroyed: false
+                });
+                
+                this.pigs.push({
+                    x: startX + 98,
+                    y: groundY - 80,
+                    radius: 15,
+                    color: '#98FB98',
+                    destroyed: false
+                });
+            }
+            
+            createLevel5(startX, groundY) {
+                // Complex fortress
+                // Outer walls
+                for (let i = 0; i < 10; i++) {
+                    this.blocks.push({
+                        x: startX + i * 35,
+                        y: groundY - 30,
+                        width: 30,
+                        height: 30,
+                        color: '#696969',
+                        destroyed: false
+                    });
+                }
+                
+                // Inner structure
+                for (let i = 2; i < 8; i++) {
+                    this.blocks.push({
+                        x: startX + i * 35,
+                        y: groundY - 65,
+                        width: 30,
+                        height: 30,
+                        color: '#2F4F4F',
+                        destroyed: false
+                    });
+                }
+                
+                // Central tower
+                for (let i = 0; i < 6; i++) {
+                    this.blocks.push({
+                        x: startX + 140,
+                        y: groundY - 100 - (i * 30),
+                        width: 40,
+                        height: 25,
+                        color: '#8B4513',
+                        destroyed: false
+                    });
+                }
+                
+                // Side towers
+                for (let i = 0; i < 3; i++) {
+                    this.blocks.push({
+                        x: startX + 70,
+                        y: groundY - 100 - (i * 30),
+                        width: 30,
+                        height: 25,
+                        color: '#A0522D',
+                        destroyed: false
+                    });
+                    
+                    this.blocks.push({
+                        x: startX + 210,
+                        y: groundY - 100 - (i * 30),
+                        width: 30,
+                        height: 25,
+                        color: '#A0522D',
+                        destroyed: false
+                    });
+                }
+                
+                // Multiple pigs
+                this.pigs.push({
+                    x: startX + 160,
+                    y: groundY - 280,
+                    radius: 25,
+                    color: '#FFD700',
+                    destroyed: false
+                });
+                
+                this.pigs.push({
+                    x: startX + 85,
+                    y: groundY - 190,
+                    radius: 18,
+                    color: '#90EE90',
+                    destroyed: false
+                });
+                
+                this.pigs.push({
+                    x: startX + 225,
+                    y: groundY - 190,
+                    radius: 18,
+                    color: '#90EE90',
+                    destroyed: false
+                });
+                
+                this.pigs.push({
+                    x: startX + 120,
+                    y: groundY - 50,
+                    radius: 16,
+                    color: '#98FB98',
+                    destroyed: false
+                });
+                
+                this.pigs.push({
+                    x: startX + 200,
+                    y: groundY - 50,
+                    radius: 16,
+                    color: '#98FB98',
+                    destroyed: false
+                });
+            }
+            
+            setupEventListeners() {
+                this.canvas.addEventListener('mousedown', (e) => {
+                    if (this.gameState === 'aiming') {
+                        this.mouse.down = true;
+                        this.updateMousePosition(e);
+                    }
+                });
+                
+                this.canvas.addEventListener('mousemove', (e) => {
+                    this.updateMousePosition(e);
+                    if (this.mouse.down && this.gameState === 'aiming') {
+                        this.calculateTrajectory();
+                    }
+                });
+                
+                this.canvas.addEventListener('mouseup', (e) => {
+                    if (this.mouse.down && this.gameState === 'aiming') {
+                        this.launchBird();
+                    }
+                    this.mouse.down = false;
+                });
+                
+                document.getElementById('restartBtn').addEventListener('click', () => {
+                    this.restartGame();
+                });
+                
+                window.addEventListener('resize', () => {
+                    this.canvas.width = window.innerWidth;
+                    this.canvas.height = window.innerHeight;
+                });
+            }
+            
+            updateMousePosition(e) {
+                const rect = this.canvas.getBoundingClientRect();
+                this.mouse.x = e.clientX - rect.left;
+                this.mouse.y = e.clientY - rect.top;
+            }
+            
+            calculateTrajectory() {
+                this.trajectory = [];
+                const dx = this.slingshot.x - this.mouse.x;
+                const dy = this.slingshot.y - 30 - this.mouse.y;
+                
+                const power = Math.min(Math.sqrt(dx * dx + dy * dy) / 3, 50);
+                const angle = Math.atan2(dy, dx);
+                
+                const vx = Math.cos(angle) * power;
+                const vy = Math.sin(angle) * power;
+                
+                let x = this.slingshot.x;
+                let y = this.slingshot.y - 30;
+                let velX = vx;
+                let velY = vy;
+                
+                for (let i = 0; i < 30; i++) {
+                    this.trajectory.push({ x, y });
+                    x += velX;
+                    y += velY;
+                    velY += 0.5; 
+                    
+                    if (y > this.canvas.height) break;
+                }
+            }
+            
+            launchBird() {
+                const dx = this.slingshot.x - this.mouse.x;
+                const dy = this.slingshot.y - 30 - this.mouse.y;
+                
+                const power = Math.min(Math.sqrt(dx * dx + dy * dy) / 3, 50);
+                const angle = Math.atan2(dy, dx);
+                
+                this.bird.vx = Math.cos(angle) * power;
+                this.bird.vy = Math.sin(angle) * power;
+                this.bird.launched = true;
+                
+                this.gameState = 'flying';
+                this.trajectory = [];
+                this.birdsLeft--;
+                
+                document.getElementById('birdsLeft').textContent = this.birdsLeft;
+            }
+            
+            updatePhysics() {
+                if (this.bird.launched) {
+                    this.bird.x += this.bird.vx;
+                    this.bird.y += this.bird.vy;
+                    this.bird.vy += 0.5; 
+                    
+                
+                    this.blocks.forEach(block => {
+                        if (!block.destroyed && this.checkBirdBlockCollision(this.bird, block)) {
+                            this.destroyBlock(block);
+                            this.bird.vx *= 0.5;
+                            this.bird.vy *= 0.5;
+                        }
+                    });
+                    
+                    
+                    this.pigs.forEach(pig => {
+                        if (!pig.destroyed && this.checkBirdPigCollision(this.bird, pig)) {
+                            this.destroyPig(pig);
+                            this.bird.vx *= 0.3;
+                            this.bird.vy *= 0.3;
+                        }
+                    });
+                    
+                    
+                    if (this.bird.y > this.canvas.height - 50) {
+                        this.bird.y = this.canvas.height - 50;
+                        this.bird.vy = 0;
+                        this.bird.vx *= 0.8;
+                        
+                        if (Math.abs(this.bird.vx) < 1) {
+                            this.gameState = 'waiting';
+                            setTimeout(() => {
+                                this.nextTurn();
+                            }, 2000);
+                        }
+                    }
+                    
+                    
+                    if (this.bird.x > this.canvas.width + 100) {
+                        this.gameState = 'waiting';
+                        setTimeout(() => {
+                            this.nextTurn();
+                        }, 1000);
+                    }
+                }
+                
+                
+                this.particles = this.particles.filter(particle => {
+                    particle.x += particle.vx;
+                    particle.y += particle.vy;
+                    particle.vy += 0.2;
+                    particle.life--;
+                    return particle.life > 0;
+                });
+            }
+            
+            checkBirdBlockCollision(bird, block) {
+                return bird.x + bird.radius > block.x &&
+                       bird.x - bird.radius < block.x + block.width &&
+                       bird.y + bird.radius > block.y &&
+                       bird.y - bird.radius < block.y + block.height;
+            }
+            
+            checkBirdPigCollision(bird, pig) {
+                const dx = bird.x - pig.x;
+                const dy = bird.y - pig.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                return distance < bird.radius + pig.radius;
+            }
+            
+            destroyBlock(block) {
+                block.destroyed = true;
+                this.score += 100;
+                this.createParticles(block.x + block.width/2, block.y + block.height/2, block.color);
+                document.getElementById('score').textContent = this.score;
+            }
+            
+            destroyPig(pig) {
+                pig.destroyed = true;
+                this.score += 500;
+                this.createParticles(pig.x, pig.y, pig.color);
+                document.getElementById('score').textContent = this.score;
+            }
+            
+            createParticles(x, y, color) {
+                for (let i = 0; i < 8; i++) {
+                    this.particles.push({
+                        x: x,
+                        y: y,
+                        vx: (Math.random() - 0.5) * 10,
+                        vy: (Math.random() - 0.5) * 10,
+                        color: color,
+                        life: 30
+                    });
+                }
+            }
+            
+            nextTurn() {
+                if (this.checkWin()) {
+                    this.showGameOver('You Win!');
+                    return;
+                }
+                
+                if (this.birdsLeft <= 0) {
+                    this.showGameOver('Game Over!');
+                    return;
+                }
+                
+                this.resetBird();
+                this.gameState = 'aiming';
+            }
+            
+            checkWin() {
+                return this.pigs.every(pig => pig.destroyed);
+            }
+            
+            nextLevel() {
+                this.currentLevel++;
+                this.score += this.birdsLeft * 100; 
+                
+                document.getElementById('score').textContent = this.score;
+                
+                this.setupGame();
+                this.gameState = 'aiming';
+            }
+            
+            showGameOver(message) {
+                if (message === 'You Win!' && this.currentLevel < 5) {
+                    document.getElementById('gameOverText').textContent = `Level ${this.currentLevel} Complete!`;
+                    document.getElementById('gameOver').style.display = 'block';
+                    document.getElementById('restartBtn').textContent = 'Next Level';
+                } else if (message === 'You Win!' && this.currentLevel >= 5) {
+                    document.getElementById('gameOverText').textContent = 'Congratulations! All Levels Complete!';
+                    document.getElementById('gameOver').style.display = 'block';
+                    document.getElementById('restartBtn').textContent = 'Play Again';
+                } else {
+                    document.getElementById('gameOverText').textContent = message;
+                    document.getElementById('gameOver').style.display = 'block';
+                    document.getElementById('restartBtn').textContent = 'Try Again';
+                }
+            }
+            
+            restartGame() {
+                const buttonText = document.getElementById('restartBtn').textContent;
+
+                if (buttonText === 'Next Level') {
+                    document.getElementById('gameOver').style.display = 'none';
+                    this.nextLevel();
+                    return;
+                }
+
+                this.score = 0;
+                this.currentLevel = 1;
+                this.gameState = 'aiming';
+                this.particles = [];
+                
+                document.getElementById('score').textContent = this.score;
+                document.getElementById('currentLevel').textContent = this.currentLevel;
+                document.getElementById('gameOver').style.display = 'none';
+                document.getElementById('restartBtn').textContent = 'Play Again';
+                
+                this.setupGame();
+            }
+            
+            render() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                
+                this.ctx.fillStyle = '#654321';
+                this.ctx.fillRect(0, this.canvas.height - 50, this.canvas.width, 50);
+                
+               
+                this.ctx.fillStyle = '#8B4513';
+                this.ctx.fillRect(this.slingshot.x - 10, this.slingshot.y - this.slingshot.baseHeight, 
+                                 this.slingshot.baseWidth, this.slingshot.baseHeight);
+                
+                
+                if (this.gameState === 'aiming' && this.mouse.down) {
+                    this.ctx.strokeStyle = '#654321';
+                    this.ctx.lineWidth = 4;
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(this.slingshot.x - 8, this.slingshot.y - this.slingshot.baseHeight + 10);
+                    this.ctx.lineTo(this.bird.x, this.bird.y);
+                    this.ctx.lineTo(this.slingshot.x + 8, this.slingshot.y - this.slingshot.baseHeight + 10);
+                    this.ctx.stroke();
+                }
+                
+                
+                if (this.trajectory.length > 0) {
+                    this.ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+                    this.ctx.lineWidth = 2;
+                    this.ctx.setLineDash([5, 5]);
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(this.trajectory[0].x, this.trajectory[0].y);
+                    for (let i = 1; i < this.trajectory.length; i++) {
+                        this.ctx.lineTo(this.trajectory[i].x, this.trajectory[i].y);
+                    }
+                    this.ctx.stroke();
+                    this.ctx.setLineDash([]);
+                }
+                
+                
+                if (this.gameState === 'aiming' && this.mouse.down) {
+                    const dx = this.slingshot.x - this.mouse.x;
+                    const dy = this.slingshot.y - 30 - this.mouse.y;
+                    const maxDistance = 100;
+                    const distance = Math.min(Math.sqrt(dx * dx + dy * dy), maxDistance);
+                    const angle = Math.atan2(dy, dx);
+                    
+                    this.bird.x = this.slingshot.x - Math.cos(angle) * distance;
+                    this.bird.y = this.slingshot.y - 30 - Math.sin(angle) * distance;
+                }
+                
+                
+                if (this.birdImage.complete) {
+                    this.ctx.drawImage(this.birdImage, this.bird.x - this.bird.width / 2, this.bird.y - this.bird.height / 2, this.bird.width, this.bird.height);
+                } else {
+                    
+                    this.ctx.fillStyle = '#ff4444';
+                    this.ctx.beginPath();
+                    this.ctx.arc(this.bird.x, this.bird.y, this.bird.radius, 0, Math.PI * 2);
+                    this.ctx.fill();
+                }
+                
+                
+                this.blocks.forEach(block => {
+                    if (!block.destroyed) {
+                        this.ctx.fillStyle = block.color;
+                        this.ctx.fillRect(block.x, block.y, block.width, block.height);
+                        this.ctx.strokeStyle = '#654321';
+                        this.ctx.lineWidth = 2;
+                        this.ctx.strokeRect(block.x, block.y, block.width, block.height);
+                    }
+                });
+                
+                
+                this.pigs.forEach(pig => {
+                    if (!pig.destroyed) {
+                        this.ctx.fillStyle = pig.color;
+                        this.ctx.beginPath();
+                        this.ctx.arc(pig.x, pig.y, pig.radius, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        
+                        
+                        this.ctx.fillStyle = 'black';
+                        this.ctx.beginPath();
+                        this.ctx.arc(pig.x - 6, pig.y - 4, 2, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        this.ctx.beginPath();
+                        this.ctx.arc(pig.x + 6, pig.y - 4, 2, 0, Math.PI * 2);
+                        this.ctx.fill();
+                        
+                        
+                        this.ctx.fillStyle = '#7CFC00';
+                        this.ctx.beginPath();
+                        this.ctx.arc(pig.x, pig.y + 4, 4, 0, Math.PI * 2);
+                        this.ctx.fill();
+                    }
+                });
+                
+                
+                this.particles.forEach(particle => {
+                    this.ctx.fillStyle = particle.color;
+                    this.ctx.globalAlpha = particle.life / 30;
+                    this.ctx.fillRect(particle.x - 2, particle.y - 2, 4, 4);
+                });
+                this.ctx.globalAlpha = 1;
+            }
+            
+            gameLoop() {
+                this.updatePhysics();
+                this.render();
+                requestAnimationFrame(() => this.gameLoop());
+            }
+        }
+        
+       
+        window.addEventListener('load', () => {
+            new AngryBirdsGame();
+        });
+    </script>
+</body>
+</html>
